@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diário de estudos</title>
+<style>
+:root{--bg:#edf1f5;--card:#fff;--ink:#1b2430;--muted:#5b6776;--line:#d5dce5;--brand:#12684f;
+--l0:#e3e8ee;--l1:#b7e4d4;--l2:#6cc9a8;--l3:#2fa57e;--l4:#12684f}
+@media(prefers-color-scheme:dark){:root{--bg:#0f151c;--card:#171f29;--ink:#e6ecf2;--muted:#93a1b1;--line:#2a3544;--brand:#3dbd93;
+--l0:#222c38;--l1:#1d5a47;--l2:#238a68;--l3:#2fb386;--l4:#6fe0b8}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--brand)}
+header.top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line)}
+header.top a.brand{font-weight:700;color:var(--ink);text-decoration:none;font-size:18px}
+header.top nav{display:flex;gap:14px;font-size:15px}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:16px}
+h1{font-size:26px;margin:0 0 4px}h2{font-size:17px;margin:0 0 10px}
+.muted{color:var(--muted)}
+.msg{background:#fde8e8;color:#8a1c1c;border-radius:8px;padding:10px 14px;margin:12px 0}
+.msg.ok{background:#dff5ea;color:#0d4a37}
+label{display:block;font-weight:600;margin:12px 0 4px}
+input,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{min-height:96px;resize:vertical}
+input:focus,textarea:focus,button:focus-visible,.cell:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.btn{display:inline-block;background:var(--brand);color:#fff;border:0;border-radius:8px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
+.btn.ghost{background:transparent;color:var(--brand);border:1px solid var(--brand)}
+.btn.small{padding:6px 12px;font-size:14px}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.stat{flex:1 1 120px;background:var(--bg);border-radius:8px;padding:10px 12px}
+.stat b{display:block;font-size:22px}
+ul.goals{margin:0;padding-left:20px}
+.people a{display:flex;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);text-decoration:none;color:var(--ink)}
+.people a:last-child{border:0}
+.wrap{overflow-x:auto;padding-bottom:8px}
+.months,.grid{display:grid;grid-template-columns:repeat(53,13px);gap:3px;width:max-content}
+.months{height:18px;font-size:12px;color:var(--muted);margin-bottom:4px}
+.grid{grid-template-rows:repeat(7,13px);grid-auto-flow:column}
+.cell{width:13px;height:13px;border-radius:3px;border:0;padding:0;background:var(--l0);cursor:pointer}
+.cell[data-l="1"]{background:var(--l1)}.cell[data-l="2"]{background:var(--l2)}
+.cell[data-l="3"]{background:var(--l3)}.cell[data-l="4"]{background:var(--l4)}
+.cell.sel{outline:2px solid var(--ink);outline-offset:1px}
+.legend{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);justify-content:flex-end;margin-top:8px}
+.legend i{width:13px;height:13px;border-radius:3px;display:inline-block}
+.day-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.day-head b{font-size:20px}
+ul.topics{list-style:none;padding:0;margin:10px 0}
+ul.topics li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+ul.topics button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:14px;padding:6px}
+.add{display:flex;gap:8px;margin-top:10px}
+.add input{flex:1}
+@media(max-width:520px){.add{flex-direction:column}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// ====== CONFIGURE AQUI (Supabase > Project Settings > API) ======
+const SUPABASE_URL = 'COLE_AQUI_A_PROJECT_URL';
+const SUPABASE_KEY = 'COLE_AQUI_A_ANON_PUBLIC_KEY';
+// ================================================================
+
+const app = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const pad = n => String(n).padStart(2, '0');
+const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+let sb, me = null;
+
+function go(h) { if (location.hash === h) route(); else location.hash = h; }
+function msg(text, ok) { const m = document.getElementById('msg'); if (m) { m.textContent = text; m.className = 'msg' + (ok ? ' ok' : ''); m.hidden = false; } }
+
+function page(html) {
+  app.innerHTML = `<header class="top"><a class="brand" href="#/">Diário de estudos</a><nav>${
+    me ? `<a href="#/u/${esc(me.username)}">Meu perfil</a><a href="#" id="out">Sair</a>`
+       : `<a href="#/entrar">Entrar</a><a href="#/cadastro">Criar conta</a>`}</nav></header><main>${html}</main>`;
+  const out = document.getElementById('out');
+  if (out) out.onclick = async e => { e.preventDefault(); await sb.auth.signOut(); me = null; go('#/'); };
+}
+
+async function loadMe() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { me = null; return; }
+  const { data } = await sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+  me = data || null;
+}
+
+async function route() {
+  const [a, b] = location.hash.replace(/^#\/?/, '').split('/');
+  if (!a) return me ? go('#/u/' + me.username) : home();
+  if (a === 'entrar') return authView('login');
+  if (a === 'cadastro') return authView('register');
+  if (a === 'editar') return me ? editView() : go('#/entrar');
+  if (a === 'u' && b) return profileView(decodeURIComponent(b).toLowerCase());
+  home();
+}
+
+// ---------- páginas ----------
+async function home() {
+  page('<p class="muted">Carregando…</p>');
+  const { data } = await sb.from('profiles').select('username,display_name').order('display_name').limit(100);
+  page(`<div class="card"><h1>Registre o que você estuda, dia após dia</h1>
+    <p class="muted">Cada assunto aprendido pinta um quadradinho no seu calendário.</p>
+    <a class="btn" href="#/cadastro">Criar conta</a> <a class="btn ghost" href="#/entrar">Já tenho conta</a></div>
+    ${data && data.length ? `<div class="card people"><h2>Perfis</h2>${data.map(p =>
+      `<a href="#/u/${esc(p.username)}"><span><b>${esc(p.display_name)}</b> <span class="muted">@${esc(p.username)}</span></span></a>`).join('')}</div>` : ''}`);
+}
+
+function authView(mode) {
+  const reg = mode === 'register';
+  page(`<div class="card" style="max-width:420px;margin:30px auto"><h1>${reg ? 'Criar conta' : 'Entrar'}</h1>
+    <div id="msg" class="msg" hidden></div>
+    <form id="f">
+      ${reg ? `<label for="name">Seu nome</label><input id="name" required maxlength="60" autocomplete="name">
+      <label for="user">Usuário (letras, números ou _)</label><input id="user" required autocapitalize="none" maxlength="20">` : ''}
+      <label for="email">E-mail</label><input id="email" type="email" required autocomplete="email">
+      <label for="pw">Senha</label><input id="pw" type="password" required minlength="6" autocomplete="${reg ? 'new-password' : 'current-password'}">
+      <p><button class="btn" type="submit">${reg ? 'Criar conta' : 'Entrar'}</button></p>
+    </form>
+    <p class="muted">${reg ? 'Já tem conta? <a href="#/entrar">Entrar</a>' : 'Ainda não tem conta? <a href="#/cadastro">Criar conta</a>'}</p></div>`);
+  document.getElementById('f').onsubmit = async e => {
+    e.preventDefault();
+    const email = document.getElementById('email').value.trim(), password = document.getElementById('pw').value;
+    if (!reg) {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) return msg('E-mail ou senha incorretos.');
+      await loadMe(); return go('#/');
+    }
+    const username = document.getElementById('user').value.trim().toLowerCase();
+    const display_name = document.getElementById('name').value.trim();
+    if (!/^[a-z0-9_]{3,20}$/.test(username)) return msg('O usuário precisa ter de 3 a 20 caracteres: letras, números ou _.');
+    const { data: taken } = await sb.from('profiles').select('id').eq('username', username).maybeSingle();
+    if (taken) return msg('Esse usuário já existe. Escolha outro.');
+    const { data, error } = await sb.auth.signUp({ email, password, options: { data: { username, display_name } } });
+    if (error) return msg('Não foi possível criar a conta: ' + error.message);
+    if (!data.session) return msg('Conta criada! Confirme o e-mail que enviamos e depois entre.', true);
+    await loadMe(); go('#/editar');
+  };
+}
+
+function editView() {
+  page(`<div class="card"><h1>Editar perfil</h1><div id="msg" class="msg" hidden></div>
+    <form id="f"><label for="name">Nome</label><input id="name" maxlength="60" required value="${esc(me.display_name)}">
+    <label for="bio">Descrição</label><textarea id="bio" maxlength="500" placeholder="Fale um pouco sobre você e sobre o que estuda.">${esc(me.bio)}</textarea>
+    <label for="goals">Objetivos (um por linha)</label><textarea id="goals" maxlength="1500" placeholder="Passar no concurso&#10;Aprender Python">${esc(me.goals)}</textarea>
+    <p><button class="btn" type="submit">Salvar perfil</button> <a class="btn ghost" href="#/u/${esc(me.username)}">Cancelar</a></p></form></div>`);
+  document.getElementById('f').onsubmit = async e => {
+    e.preventDefault();
+    const upd = { display_name: document.getElementById('name').value.trim(), bio: document.getElementById('bio').value.trim(), goals: document.getElementById('goals').value.trim() };
+    const { error } = await sb.from('profiles').update(upd).eq('id', me.id);
+    if (error) return msg('Não foi possível salvar: ' + error.message);
+    Object.assign(me, upd); go('#/u/' + me.username);
+  };
+}
+
+async function fetchTopics(uid, from) {
+  let all = [], i = 0;
+  for (;;) {
+    const { data, error } = await sb.from('topics').select('id,day,title').eq('user_id', uid).gte('day', from)
+      .order('day').order('id').range(i, i + 999);
+    if (error || !data) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    i += 1000;
+  }
+  return all;
+}
+
+async function profileView(username) {
+  page('<p class="muted">Carregando…</p>');
+  const { data: p } = await sb.from('profiles').select('*').eq('username', username).maybeSingle();
+  if (!p) return page('<div class="card"><h1>Perfil não encontrado</h1><a href="#/">Voltar</a></div>');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(today); start.setDate(start.getDate() - today.getDay() - 52 * 7);
+  const rows = await fetchTopics(p.id, keyOf(start));
+  const DATA = {};
+  rows.forEach(r => (DATA[r.day] = DATA[r.day] || []).push({ id: r.id, t: r.title }));
+  const EDIT = !!(me && me.id === p.id);
+  const goals = p.goals.split('\n').map(s => s.trim()).filter(Boolean);
+
+  const streak = () => {
+    const d = new Date(today); if (!DATA[keyOf(d)]) d.setDate(d.getDate() - 1);
+    let n = 0; while (DATA[keyOf(d)]) { n++; d.setDate(d.getDate() - 1); } return n;
+  };
+
+  page(`<div class="card"><div class="day-head"><div><h1>${esc(p.display_name)}</h1><span class="muted">@${esc(p.username)}</span></div>
+      ${EDIT ? '<a class="btn ghost small" href="#/editar">Editar perfil</a>' : ''}</div>
+    ${p.bio ? `<p style="white-space:pre-line">${esc(p.bio)}</p>` : EDIT ? '<p class="muted">Adicione uma descrição ao seu perfil.</p>' : ''}
+    <div class="stats"><div class="stat"><b id="s-days"></b><span class="muted">dias estudados (último ano)</span></div>
+      <div class="stat"><b id="s-topics"></b><span class="muted">assuntos aprendidos</span></div>
+      <div class="stat"><b id="s-streak"></b><span class="muted">dias seguidos</span></div></div></div>
+    ${goals.length || EDIT ? `<div class="card"><h2>Objetivos</h2>${goals.length ? `<ul class="goals">${goals.map(g => `<li>${esc(g)}</li>`).join('')}</ul>` : '<p class="muted">Você ainda não definiu objetivos.</p>'}</div>` : ''}
+    <div class="card"><h2>Dias de estudo</h2><div class="wrap" id="wrap"><div class="months" id="months"></div><div class="grid" id="grid"></div></div>
+      <div class="legend">Menos <i style="background:var(--l0)"></i><i style="background:var(--l1)"></i><i style="background:var(--l2)"></i><i style="background:var(--l3)"></i><i style="background:var(--l4)"></i> Mais</div></div>
+    <div class="card"><div class="day-head"><b id="day-title"></b><span class="muted" id="day-count"></span></div>
+      <ul class="topics" id="topics"></ul><p class="muted" id="empty" hidden>Nenhum assunto registrado neste dia.</p>
+      ${EDIT ? '<div class="add"><input id="new-topic" maxlength="120" placeholder="O que você aprendeu neste dia?" autocomplete="off"><button class="btn" id="add-btn" type="button">Adicionar</button></div>' : ''}</div>`);
+
+  const cells = {}; let selected = null;
+  const stats = () => {
+    document.getElementById('s-days').textContent = Object.keys(DATA).length;
+    document.getElementById('s-topics').textContent = Object.values(DATA).reduce((a, l) => a + l.length, 0);
+    document.getElementById('s-streak').textContent = streak();
+  };
+  const paint = k => {
+    const c = cells[k]; if (!c) return;
+    const n = (DATA[k] || []).length, [y, m, d] = k.split('-');
+    c.dataset.l = Math.min(n, 4);
+    c.title = c.ariaLabel = `${n} ${n === 1 ? 'assunto' : 'assuntos'} em ${d}/${m}/${y}`;
+  };
+  const select = k => {
+    if (selected && cells[selected]) cells[selected].classList.remove('sel');
+    selected = k; if (cells[k]) cells[k].classList.add('sel');
+    const [y, m, d] = k.split('-').map(Number), list = DATA[k] || [], ul = document.getElementById('topics');
+    document.getElementById('day-title').textContent = new Date(y, m - 1, d).toLocaleDateString('pt-BR', { dateStyle: 'long' });
+    document.getElementById('day-count').textContent = `${list.length} ${list.length === 1 ? 'assunto aprendido' : 'assuntos aprendidos'}`;
+    document.getElementById('empty').hidden = list.length > 0;
+    ul.innerHTML = '';
+    list.forEach(t => {
+      const li = document.createElement('li'), s = document.createElement('span'); s.textContent = t.t; li.appendChild(s);
+      if (EDIT) { const x = document.createElement('button'); x.type = 'button'; x.textContent = 'Remover'; x.onclick = () => remove(k, t.id); li.appendChild(x); }
+      ul.appendChild(li);
+    });
+    stats();
+  };
+  const remove = async (k, id) => {
+    const { error } = await sb.from('topics').delete().eq('id', id);
+    if (error) return alert('Não foi possível remover.');
+    DATA[k] = DATA[k].filter(t => t.id !== id); if (!DATA[k].length) delete DATA[k];
+    paint(k); select(k);
+  };
+  const add = async () => {
+    const input = document.getElementById('new-topic'), title = input.value.trim();
+    if (!title) return;
+    const { data, error } = await sb.from('topics').insert({ user_id: me.id, day: selected, title }).select('id').single();
+    if (error) return alert('Não foi possível salvar. Entre novamente e tente de novo.');
+    (DATA[selected] = DATA[selected] || []).push({ id: data.id, t: title });
+    input.value = ''; paint(selected); select(selected); input.focus();
+  };
+
+  const grid = document.getElementById('grid'), months = document.getElementById('months');
+  let col = 0, lastMonth = -1;
+  for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+    if (d.getDay() === 0) {
+      if (d.getMonth() !== lastMonth) {
+        const s = document.createElement('span'); s.textContent = MESES[d.getMonth()]; s.style.gridColumn = col + 1;
+        months.appendChild(s); lastMonth = d.getMonth();
+      }
+      col++;
+    }
+    const k = keyOf(d), b = document.createElement('button');
+    b.className = 'cell'; b.type = 'button'; b.onclick = () => select(k);
+    grid.appendChild(b); cells[k] = b; paint(k);
+  }
+  document.getElementById('wrap').scrollLeft = 99999;
+  select(keyOf(today));
+  if (EDIT) {
+    document.getElementById('add-btn').onclick = add;
+    document.getElementById('new-topic').onkeydown = e => { if (e.key === 'Enter') add(); };
+  }
+}
+
+// ---------- início ----------
+(async () => {
+  if (SUPABASE_URL.includes('COLE_AQUI')) {
+    app.innerHTML = '<main><div class="card"><h1>Falta configurar</h1><p>Abra o <b>index.html</b> e preencha <b>SUPABASE_URL</b> e <b>SUPABASE_KEY</b> no começo do script.</p></div></main>';
+    return;
+  }
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  await loadMe();
+  window.addEventListener('hashchange', route);
+  route();
+})();
+</script>
+</body>
+</html>
